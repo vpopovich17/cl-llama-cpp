@@ -1,7 +1,7 @@
 # llama.cpp Upstream Digest
 
 Pin at last update: 4988f6e866057afd130c1515ecef0c9bab9a15f8
-Last covered upstream commit: 01fc3aae846caa644f0cee360f108d4c48e4aaa1
+Last covered upstream commit: 0ae0e1976670fac25f4e0ed864df30021accc764
 
 ---
 
@@ -871,3 +871,102 @@ No new breaking API changes were introduced in this batch. The `llama.h` diff co
 - **Converters**: Granite Switch Decision (#30676); Muse Spark Open (#30616); model endian conversion speedup (#30647); PPLX decider text-only checkpoints (#30575); Granite Switch block_count fix (#30621); Granite speech tensor regression (#30628); Mistral format for DeepseekV2 (#30669); LoRA conversion with --outtype auto fix (#30433); YaRN truncation config export (#30288); lightonocr native resolution default (#30600).
 - **Jinja**: NaN/inf serialization (#30483); float repr matching Python's str() (#30362); loop body variable scoping (#30533); context copy constructor performance (#30562).
 - **Other**: gguf-py Q1_0/Q2_0 de/quantization (#30630); gguf-py NFC detection (#30540); Unicode overlong UTF-8 rejection (#30485); Unicode NFC normalization (#30390); graph embedding reorder dropped (#30461); no-cache graph reallocation avoidance (#30439); skip logits buffer when graph produces none (#30255); layers split evenly when no device reports memory (#29677); foreign ranges not mapped into backend buffers (#30405); llama_prefetch split into merge and prefetch steps (#30532); graph subgraph recreation on arena reallocation (#30453); KQ bias padding for no-cache attention (#30446); k-pool selection in causal mask (#30480).
+
+---
+
+## 2026-10-23 — 148 commits since last digest
+
+### New Features
+
+- **Kolibri-1 (Aleph Alpha) 78B MoE** (#30673): A bilingual German/English model with 384 routed experts plus one shared expert. Interleaves four sliding-window attention layers (window=513) with one full attention layer, uses NeoX RoPE for SWA and NoPE for full layers, and routes via sigmoid-weighted logits with an expert bias. Includes QK-RMSNorm and post-attention/post-FFN normalization.
+- **Flint model (FlintForCausalLM)** (#30928): New model architecture support with conversion, GGUF constants, and model graph.
+- **SenseNova U1 understanding model** (#28919): Dense SenseNova U1 with temporal/spatial Q/K normalization, 4-axis RoPE, and a vision encoder with patch embedding, GELU, adjacent-pair 2D RoPE, spatial downsampling, and dense projection for dynamic-resolution images.
+- **H2O-Lightning-4B decision model** (#30361): A Qwen3.5-4B-based decision/classifier model that outputs option probabilities via the `/v1/systemone` endpoint. Supports up to 255 labels with single-token option markers.
+- **Granite Switch Decision 256 options** (#30693): Extended the Granite Switch decision models from 66 to 255 option markers by discovering single-token sequences at conversion time.
+- **Nemotron-3(.5)-Embed** (#30877): Embedding model support for the Nemotron 3/3.5 embed family.
+- **MiniCPM-OCR 1.0** (#30979): Multimodal OCR support for the MiniCPM-OCR model.
+- **Qwen3 bidirectional attention + dense_2 output** (#30607): Qwen3 models can now use bidirectional (non-causal) attention and an optional `dense_2` output projection, supporting embedding and encoder model variants.
+- **Fused QSA mask op (`ggml_top_k_mask`)** (#30640): A new ggml operation that generalizes the k-pool sparse attention mask construction into a single kernel. Replaces hand-built fill+set_rows+add chains for DSA, QSA, and DeepSeek V4 CSA attention, reducing kernel launches on models with sparse attention patterns.
+- **Server: POST /tts endpoint** (#26603): Text-to-speech API endpoint for TTS models (e.g., pocket-tts, Qwen3-TTS), with streaming PCM output, speaker reference upload, and seed control.
+- **Server: realtime transcription API** (#30636): WebSocket-based streaming audio transcription following the OpenAI Realtime API shape, with API key auth at handshake, proper slot management, and committed-item tracking (#30994).
+- **Server: `--connect` for peer-to-peer access** (#28277): New `--connect` flag that tunnels the server for remote access outside the LAN, with a connect code shown in the UI and `/props`.
+- **Server: typed content input for RERANK** (#29625): The `/rerank` endpoint now accepts multimodal (image/video/audio) inputs alongside text for models that support it.
+- **Server: logprobs with speculative decoding** (#27196): Accepted draft tokens now report the target model's log-probabilities, fixing an omission where speculative decoding returned empty logprobs.
+- **UI: Discover & Download Models from HF Hub** (#29584): A full model discovery and download interface in the server web UI — browsing curated catalogs, searching HuggingFace, downloading with automatic draft sidecar pairing, resumable downloads, progress tracking, and a detailed model info pane with readme and metadata.
+- **MoE SLRU expert cache** (#30637): The GPU MoE expert cache (for experts kept in host memory) now uses a 50/50 Segmented LRU policy instead of plain LRU, improving hit rates for frequently reused experts.
+- **MoE down-projection per-expert-token scaling** (#30861): Replaces global amax rescaling with per-expert-token factors computed via POOL_1D max reduction, improving precision for MoE models. Supports tensor parallelism.
+- **Probabilistic sampling for DFlash2 drafts** (#30663): Extends the rejection-sampling speculative verification to DFlash2 draft models, matching the earlier probabilistic sampling added for simple and MTP drafts.
+- **Dynamic ngram cache persistence** (#22055): The dynamic n-gram cache used for n-gram speculative decoding is now saved to disk on exit and reloaded on startup, so n-gram statistics accumulate across sessions.
+- **CUDA: chunked CUDA graphs** (#30804): Amortizes CUDA graph launch overhead by chunking graph captures, improving throughput for multi-kernel sequences.
+- **CUDA: grouped experts top-k fusion** (#29181): Fuses the grouped expert top-k routing selection into a single kernel, reducing dispatch overhead for models with grouped MoE.
+- **SYCL: graph record and replay** (#28725): Adds SYCL graph recording and replay support, reducing kernel dispatch overhead on Intel GPUs.
+- **SYCL: multi-column XMX refactored** (#29864): Major rework of Intel XMX (matrix engine) kernels for 2–80 activation columns, targeting speculative decoding verification and short prompt batches. Includes a fused gate/up kernel covering up to 16 columns for all six XMX quant types. +5.9% tg128 Q4_K_M on Arc B70.
+- **Hexagon v85 support** (#30854): Updated to Snapdragon toolchain v0.8 with Hexagon v85 architecture support.
+- **Hexagon: extensive op additions**: SGN (#30346), CEIL (#31006), Q1_0/Q2_0 quant and MUL_MAT (#30122, #30627), hadamard MUL_MAT and GET_ROWS (#30627), multi-stream flash attention (#30218), vectorized softplus (#30435), neon-vectorized repack/tiling (#30901), and major fusion refactoring with BINARY_NX, GELU+MUL, REPEAT+GET_ROWS, SSM_CONV+SILU fusions (#30843).
+- **zdnn: flash attention** (#30512): Flash attention support for the IBM z/Architecture Data and Neural Network backend (s390x), with a scratch buffer pool.
+
+### Bug Fixes
+
+- **Metal moe_reduce fusion race** (#30795): When the graph allocator recycled input memory as the fused kernel's destination, a threadgroup-vs-threadgroup race produced rare non-deterministic wrong results. The fusion is now rejected when dst overlaps either input.
+- **CUDA shared-memory WAR hazard in flash_attn_ext_vec** (#30573): A write-after-read race on KQ data in the flash attention vector kernel.
+- **CUDA/HIP reduction in mmf for widths not divisible by 64** (#30836): Incorrect tile width handling in fused matrix-multiply reduction.
+- **CUDA graphs after legacy memory pool flush** (#26771): Cached CUDA graphs held dangling pointers after a pool flush.
+- **HIP bf16 WMMA operand type for gfx11/gfx12** (#30885): The WMMA builtin took `short` vectors, not `__bf16`, fixing compilation on RDNA3 and RDNA4.
+- **SYCL CONV_2D wrong results for non-contiguous input** (#30363): The kernel assumed contiguous input layout, silently producing wrong results for permuted inputs.
+- **SYCL flash attention crash for head dimension mismatch** (#30286): Crash when query head dimension didn't match the expected HSK.
+- **SYCL prompt-processing regression after Q4_0/Q8_0 weight reorder** (#30374): Weight reordering broke prompt processing on certain configs.
+- **SYCL get_rows on reordered quantized weights** (#30430): Incorrect row fetching from reordered quantized weights.
+- **OpenCL rope build error with newer Clang** (#30893): Newer Clang diagnosed an incompatible pointer type error in the RoPE kernel.
+- **Server: SWA checkpoint invalidation logic** (#30666): Incorrect sliding-window attention checkpoint validation caused unnecessary re-prefilling.
+- **Server: usage.completion_tokens undercount with n > 1** (#29486): Token counts were undercounted when generating multiple completions.
+- **Server: router client disconnect propagation** (#29707): Client disconnects weren't fully propagated to child processes, causing delayed cancellation.
+- **Server: repeated mmproj memory margin on sleep/resume** (#28233): The multimodal projector memory margin was added again on each sleep/resume cycle.
+- **ggml: time overflow in ggml_time_us** (#30969): Integer overflow in microsecond time computation; now uses double precision.
+- **ggml-cpu: NEON fp32→fp16 conversion not selected** (#30505): The ARM NEON branch defined the fast conversion function but never selected it, silently falling back to software conversion.
+- **model: qwen4exp layer inputs for DFlash drafters** (#30927): The hyper-connection-wide residual had the wrong shape for DFlash draft encoders, causing an abort on the first request.
+- **mtmd: Gemma 4 FFN activation** (#30882): Incorrect FFN activation function for the Gemma 4 vision encoder.
+- **mtmd: LFM2 tiles and layout** (#30261): Image tiling differed from the transformers reference — images were aspect-ratio-preserved instead of stretched to the grid, and rounding used std::round instead of Python's half-to-even rounding.
+- **Vocab: Nemotron-3.5-Embed tokenization** (#30974): Fixed pre-tokenizer selection for Nemotron embedding models.
+- **Vocab: hybrid DNA tokenizer** (#30825): Fixed tokenization for Carbon HybridDNA models — N-padded tail tokens, whitespace stripping inside `<dna>` tags, and special token handling for older Carbon checkpoints.
+- **Jinja: namespace attributes shadowed by dict methods** (#30941): Namespace attribute access was blocked by dict method names.
+- **GGUF-split: truncated tensor data** (#30497): The tool silently produced corrupted output when the input GGUF file was truncated; now validates tensor data bounds and rejects short reads.
+
+### Capability Gaps
+
+All previously identified breaking API changes remain unresolved in `src/bindings.lisp`:
+
+- **`llama_sampler_init_penalties`** still uses the old 4-argument signature (upstream now requires `n_vocab` as the first argument).
+- **`llama_sampler_init_dry`** still passes `n_ctx_train` (upstream removed it).
+- **`llama_model_params` struct** still has `use_mmap`/`use_direct_io`/`use_mlock` bools (upstream replaced them with `load_mode` enum, then added `lazy_mode` enum — two fields behind).
+- **`llama_context_params` struct** is missing `n_outputs_max_per_seq` and `moe_cache_size`.
+- **`llama_model_quantize_params` struct** is missing the `max_buf_size` field.
+- **`llama_version()`**, **`llama_ftype_name()`**, **`llama_model_ftype()`**, **`llama_load_mode_name()`/`llama_load_mode_from_str()`**, **`llama_model_n_layer_nextn()`**, **`llama_vocab_get_suppress_tokens()`**, **`llama_sampler_copy()`** — all still unbound.
+- **`llama_load_mode`**, **`llama_lazy_mode`** enums and **`LLAMA_FTYPE_MOSTLY_Q2_0`** — still not defined.
+- **`llama_adapter_lora_init_from_file_ptr()`**, **`llama_batch_ext` API**, **`llama_prec_policy` type**, **`llama_get_causal_attn()`** — all still unbound (additive, not breaking).
+- **`LLAMA_VOCAB_TYPE_PLAMO3`** (= 8) and **`LLAMA_VOCAB_TYPE_TEST`** (= 7) — missing from enum.
+- **`llama_perf_context_data` struct** missing `n_reallocs_same`/`n_reallocs_diff` fields (additive, not breaking).
+
+No new `include/llama.h` API changes were introduced in this batch of 148 commits. The diff against `llama.h` is empty.
+
+### Other / Internal
+
+- **Build**: LibreSSL updated to 4.4.0 (#31049); cpp-httplib updated to 0.62.0 (#30785); BoringSSL updated to 0.20261020.0 (#30889).
+- **CI**: Behavior check workflow added (#31036); WASI CI and docs (#30754); big-endian conversion tests (#30705); ABI reports as GitHub artifacts (#30619); Snapdragon device matrix updated (#30620); superfluous WebGPU jobs removed (#30868); type/lint-check for skills re-enabled (#30713); API check `--strict` mode fixed (#30623).
+- **CUDA**: DP4A MMQ tile height assertion (#30837); chunked CUDA graphs (#30804); fused qwen4exp SCALE→SIGMOID→SCALE→hc_post (#30602); grouped experts top-k fusion (#29181); faster MMVQ for low-bit types (#30517); MMQ Stream-K block capping (#30553); CUDA graphs cleared after legacy pool flush (#26771); ssm_conv kernel size 7 (#30873); fattn OOB check optimization (#30572).
+- **Metal**: Optimized argmax and pool_1d with two-pass reduction (#30862); moe_reduce fusion race fix (#30795); missing MoE kernel variant for 9 experts (#30699); memory leaks and cleanup in GPU capture (#30890); fusion baseline updated for Beam (#30764).
+- **Vulkan**: `std::aligned_alloc` replaced with `posix_memalign` for Termux (#30828).
+- **SYCL**: Graph record and replay (#28725); multi-column XMX refactored with fused gate/up kernel (#29864); ESIMD on FFN path restored (#30239); CONV_2D non-contiguous fix (#30363); FA crash fix for head dim mismatch (#30286); Q4_0/Q8_0 weight reorder regression (#30374); get_rows on reordered weights fix (#30430); IQ3 crash fix (#30604); q8 fast dequant (#30775); memset ordering fix (#30812); fp16/fp32 dequant switch merge (#30740); MKL fattn explicit dependencies (#30684); compiler warnings cleanup (#30271); duplicate mmq launch bodies collapsed (#30739).
+- **Hexagon**: v85 support with toolchain v0.8 (#30854); extensive fusion refactoring with BINARY_NX, GELU+MUL, REPEAT+GET_ROWS, SSM_CONV+SILU fusions (#30843); Q1_0 and Q2_0 support (#30122); hadamard MUL_MAT and GET_ROWS (#30627); SGN (#30346) and CEIL (#31006) ops; flash attention improvements for longer context and SWA (#30731); multi-stream FA (#30218); neon-vectorized repack (#30901); vectorized softplus (#30435); VTCM size query fix (#30655).
+- **OpenCL (Adreno)**: Depthwise conv2d (#30900); IM2COL_3D (#30895); F32-to-I32 ARGMAX (#30897); cooperative-k dp4a GEMM for q4_0/q4_k/q6_k (#30741); small batch GEMM variants (#30850); dp4a GEMM with vector activation loads (#30753); i32 GET_ROWS, i32/f32 CPY (#30756); MxFP4 MoE bin kernel for X1 (#30691); rope Clang fix (#30893).
+- **zdnn (s390x)**: Flash attention with scratch buffer pool (#30512).
+- **CPU**: NEON fp32→fp16 conversion selected (#30505); vectorized silu and expf (#30791); gelu_quick without fp16 table (#30737); non-contiguous SUM support on CPU/CUDA/Vulkan/WebGPU (#28851).
+- **KleidiAI**: Q8_0 SVE dotprod GEMV and SVE i8mm GEMM kernels for ARM (#30808).
+- **WebGPU**: Q2_0 support (#30914).
+- **HIP/ROCm**: bf16 WMMA operand type fix (#30885); `__builtin_amdgcn_perm` for q1_0 unpacking (#29927).
+- **Server**: TTS endpoint (#26603); realtime transcription API (#30636); `--connect` for p2p access (#28277); typed content for RERANK (#29625); forwarding sampling params on /v1/messages (#30856); id_slot on /v1/messages (#28554); logprobs with speculative decoding (#27196); realtime committed audio draining (#30994); Responses API output_index fix (#30863); router disconnect propagation (#29707); SWA checkpoint invalidation fix (#30666); completion_tokens undercount fix (#29486); mmproj memory margin fix (#28233); rerank placeholder substitution (#30864).
+- **Server UI**: Discover & Download Models from HF Hub (#29584) — full model browsing, search, download with sidecar pairing, resumable downloads; "Show tool call in progress" setting (#30681); markdown table/list mobile fixes (#30687); attachment preview overflow fix (#30806); search input native clear button hidden (#30719); draft sidecar badge deduplication (#30919).
+- **Converters**: SenseNova U1 (#28919); Kolibri-1 (#30673); Flint (#30928); H2O-Lightning-4B (#30361); Granite Switch Decision 256 options (#30693); Nemotron non-standard GQA/BPE/domyn-small (#23343); Nemotron-3(.5)-Embed (#30877); Qwen3 bidirectional/dense_2 (#30607); hybrid DNA tokenizer fixes (#30825); LFM2 tiling params from GGUF (#30840).
+- **Vocab**: Clean_spaces GGUF key (#30940); Tekken pre-tokenizer for pixtral (#30960); `\p{M}` lookaheads in Tekken/GPT-4o regexes (#30845); vocabulary loading optimization (#30679); metaspace prepend_scheme (#23343).
+- **Jinja**: `unique` filter (#30819); hexadecimal string escapes (#30929); namespace shadowing fix (#30941).
+- **Models**: qwen4exp QSA selection without kq_mask (#30965); qwen4exp DFlash layer input fix (#30927); qwen reshape output to 2d (#30823); glm5 input optimization (#30932); LFM2 shortconv/FFN moved to shared base (#30874); Kolibri-1 router precision cleanup (#30865); prism.hadamard folded LoRA weights (#30910); MoE down-projection per-expert-token scaling (#30861).
+- **Other**: Concurrent downloads across processes (#29312); dynamic ngram cache persistence (#22055); MoE SLRU cache (#30637); d2t placed by set_rows use (#30912); ggml_time_us overflow fix (#30969); `ggml_top_k_mask` fused op (#30640); slice-model skill (#30677); `.pi/gg` system prompt addendum (#30762); test improvements for MoE router selection (#30818) and per-tensor filler table (#30674).
